@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile document including role and isolated configuration",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "moderator", "admin", "super_admin"] },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["uid", "role"]
+    },
+    "JournalInteraction": {
+      "title": "Journal Interaction",
+      "description": "User conversation and reflective journal entry with anime companion",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "characterId": { "type": "string" },
+        "characterName": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "mood": { "type": "string" },
+        "tags": { "type": "array" },
+        "messages": { "type": "array" },
+        "summary": { "type": "object" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "wordCount": { "type": "number" }
+      },
+      "required": ["id", "userId", "characterId", "title", "createdAt"]
+    },
+    "SecurityAuditLog": {
+      "title": "Security Audit Log",
+      "description": "Immutable log for elevated administrative actions and RBAC operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorRole": { "type": "string" },
+        "action": { "type": "string" },
+        "targetId": { "type": "string" },
+        "severity": { "type": "string", "enum": ["INFO", "WARN", "CRITICAL"] },
+        "details": { "type": "string" }
+      },
+      "required": ["id", "timestamp", "actorId", "action", "severity"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile with role-based access control flags"
+    },
+    "/users/{userId}/interactions/{interactionId}": {
+      "schema": "JournalInteraction",
+      "description": "Owner-isolated companion conversation and journal entries"
+    },
+    "/system_audit_logs/{logId}": {
+      "schema": "SecurityAuditLog",
+      "description": "Privileged audit trail for administrative operations and policy checks"
+    }
+  }
+}

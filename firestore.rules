@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper authentication functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (getUserData().role == 'admin' || getUserData().role == 'super_admin');
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && getUserData().role == 'super_admin';
+    }
+
+    // Health check endpoint for connection testing
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // User profile documents & RBAC role metadata
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Standard users can initialize their own doc but default to 'user' role
+      allow create: if isOwner(userId) && 
+        (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'user');
+      
+      // Updating user doc: standard users cannot change 'role', only Admins can
+      allow update: if isOwner(userId) && (
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) ||
+        isAdmin()
+      );
+
+      allow delete: if isSuperAdmin();
+
+      // Owner-isolated companion interactions
+      match /interactions/{interactionId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      // Owner-isolated journal entries
+      match /journals/{journalId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // Privileged Audit Logs - only Admins can read/write
+    match /system_audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+  }
+}
+
