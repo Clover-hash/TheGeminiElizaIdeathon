@@ -1,6 +1,6 @@
 {
-  "name": "Gemini Reflection & Journaling",
-  "description": "Journaling and Reflecting with an AI Companion — a secure mindfulness web application featuring character companions, collaborative journal notes, emotional synthesis, and user-isolated Firestore persistence.",
+  "name": "Gemini Eliza",
+  "description": "Mindful reflection and journaling with an AI companion — subtly invoking conversational reflection with modern zero-trust security, dedicated companion notebooks, and empathetic understanding.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

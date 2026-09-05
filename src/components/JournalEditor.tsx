@@ -53,7 +53,7 @@ interface JournalEditorProps {
   selectedCharacter?: CharacterPersona;
   userEntries?: JournalEntry[];
   onChangeCharacterRequest?: () => void;
-  onSelectCharacter?: (character: CharacterPersona) => void;
+  onSelectCharacter?: (character: CharacterPersona, mode?: 'continue' | 'new') => void;
   onEntrySaved: (entry: JournalEntry) => void;
   onStartNew?: () => void;
 }
@@ -241,7 +241,7 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
     setSaveStatus('idle');
     setErrorMessage(null);
     setPersonaNoteToast(null);
-  }, [initialEntry, selectedCharacter]);
+  }, [initialEntry]);
 
   // Auto-scroll the page to focus on the chatbox (NOT the typing box) when starting a new chat or switching character
   useEffect(() => {
@@ -409,13 +409,15 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
 
   // Handle companion switch: saves current conversation and opens recent/new chat for the companion
   const handleSwitchCharacter = async (newChar: CharacterPersona) => {
+    if (newChar.id === character.id) return;
+
     // Auto-save current conversation state before switching if there are active messages or content
     if (latestStateRef.current.messages.length > 0 || latestStateRef.current.content.trim() || latestStateRef.current.title.trim()) {
       await autoSaveEntry();
     }
     
     if (onSelectCharacter) {
-      onSelectCharacter(newChar);
+      onSelectCharacter(newChar, 'continue');
       return;
     }
 
@@ -545,6 +547,13 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
     setIsGenerating(true);
     setErrorMessage(null);
 
+    // Guaranteed Persistence: auto-save user input immediately to local storage & database
+    try {
+      await persistEntry(newMessages, summary);
+    } catch (saveErr) {
+      console.warn('Immediate user message save note:', saveErr);
+    }
+
     try {
       // Step 1: AI generates the response
       const response = await askGeminiReflection({
@@ -666,11 +675,11 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-1.5 shrink-0">
                 <span>{character.name}</span>
                 <span
-                  className="text-xs px-2 py-0.5 rounded-full font-bold text-white shadow-2xs"
+                  className="text-xs px-2 py-0.5 rounded-full font-bold text-white shadow-2xs whitespace-nowrap shrink-0"
                   style={{ backgroundColor: character.themeColor.primary }}
                 >
                   {character.badge}
@@ -680,9 +689,9 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
                 <button
                   type="button"
                   onClick={onChangeCharacterRequest}
-                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors flex items-center gap-1"
+                  className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors flex items-center gap-1 shrink-0 whitespace-nowrap"
                 >
-                  <Users className="w-3 h-3" />
+                  <Users className="w-3 h-3 shrink-0" />
                   <span>Change Companion</span>
                 </button>
               )}
@@ -694,22 +703,22 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
         </div>
 
         {/* Global Action Bar */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {/* Quick Character Mini-Switch */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 overflow-x-auto max-w-full">
             {CHARACTERS.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => handleSwitchCharacter(c)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                   character.id === c.id
                     ? 'bg-white text-slate-900 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800'
                 }`}
               >
                 <span
-                  className="w-2 h-2 rounded-full"
+                  className="w-2 h-2 rounded-full shrink-0"
                   style={{ backgroundColor: c.themeColor.primary }}
                 />
                 <span>{c.name}</span>
@@ -718,25 +727,25 @@ export const JournalEditor: React.FC<JournalEditorProps> = ({
           </div>
 
           {/* Auto-save Status Pill */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs shrink-0 whitespace-nowrap">
             {isSaving ? (
               <>
-                <RefreshCw className="w-3 h-3 text-indigo-500 animate-spin" />
+                <RefreshCw className="w-3 h-3 text-indigo-500 animate-spin shrink-0" />
                 <span className="text-slate-500 font-medium">Auto-saving...</span>
               </>
             ) : saveStatus === 'saved' ? (
               <>
-                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
                 <span className="text-emerald-700 font-medium">Saved</span>
               </>
             ) : saveStatus === 'error' ? (
               <>
-                <AlertCircle className="w-3 h-3 text-rose-500" />
+                <AlertCircle className="w-3 h-3 text-rose-500 shrink-0" />
                 <span className="text-rose-600 font-medium">Save error</span>
               </>
             ) : (
               <>
-                <Cloud className="w-3 h-3 text-slate-400" />
+                <Cloud className="w-3 h-3 text-slate-400 shrink-0" />
                 <span className="text-slate-400 font-medium">Cloud sync active</span>
               </>
             )}

@@ -40,7 +40,8 @@ import {
   getLocalAuditLogs, 
   updateUserRole, 
   subscribeToAuditLogs, 
-  recordSecurityAuditLog 
+  recordSecurityAuditLog,
+  fetchRegisteredUsers
 } from '../services/firestoreService';
 import { 
   runSecurityDirectiveCheck, 
@@ -80,16 +81,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // System Telemetry
   const [telemetry, setTelemetry] = useState<any>(null);
+  const [isSyncingFirestore, setIsSyncingFirestore] = useState(false);
+  const [loadedFromFirestore, setLoadedFromFirestore] = useState(false);
 
   // Check if current user has admin permissions
   const isAdmin = hasPermission(currentUser.role, 'admin');
 
+  const refreshUsersDirectory = async () => {
+    setIsSyncingFirestore(true);
+    try {
+      const result = await fetchRegisteredUsers();
+      setUsers(result.users);
+      setLoadedFromFirestore(result.fromFirestore);
+    } catch (err) {
+      console.warn('Error fetching registered users from Firestore:', err);
+      setUsers(getLocalUsers());
+    } finally {
+      setIsSyncingFirestore(false);
+    }
+  };
+
   useEffect(() => {
-    // Load directory
-    setUsers(getLocalUsers());
+    // Initial fetch from Firestore & cache
+    refreshUsersDirectory();
 
     const handleUsersUpdate = () => {
-      setUsers(getLocalUsers());
+      refreshUsersDirectory();
     };
     window.addEventListener('users_directory_updated', handleUsersUpdate);
 
@@ -122,7 +139,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       const result = await updateUserRole(currentUser, targetUserId, newRole);
       setStatusFeedback({ type: 'success', message: result.message });
-      setUsers(getLocalUsers());
+      await refreshUsersDirectory();
     } catch (err) {
       setStatusFeedback({ 
         type: 'error', 
@@ -627,8 +644,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center flex-wrap gap-1.5">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium mr-1">Filter Role:</span>
+                <div className="flex items-center flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="font-semibold text-[11px]">
+                      {loadedFromFirestore ? 'Cloud Firestore: Live' : 'Cached Directory'}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">
+                      ({users.length} users)
+                    </span>
+                  </div>
+
+                  <button
+                    id="refresh-firestore-users-btn"
+                    onClick={refreshUsersDirectory}
+                    disabled={isSyncingFirestore}
+                    title="Sync and refresh users directory directly from Cloud Firestore collection"
+                    className="flex items-center gap-1 text-xs px-2.5 py-1 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition font-medium disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isSyncingFirestore ? 'animate-spin text-indigo-600' : ''}`} />
+                    <span>{isSyncingFirestore ? 'Syncing...' : 'Sync Firestore'}</span>
+                  </button>
+
+                  <div className="h-4 w-px bg-slate-300 dark:bg-slate-700 mx-1 hidden sm:block" />
+
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium mr-1">Role:</span>
                   {(['ALL', 'user', 'moderator', 'admin', 'super_admin'] as const).map((rf) => (
                     <button
                       key={rf}

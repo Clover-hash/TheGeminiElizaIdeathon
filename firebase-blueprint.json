@@ -10,7 +10,12 @@
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
         "role": { "type": "string", "enum": ["user", "moderator", "admin", "super_admin"] },
+        "isAnonymous": { "type": "boolean" },
+        "preferredCompanion": { "type": "string" },
+        "reflectionIntention": { "type": "string" },
+        "reflectionFrequency": { "type": "string" },
         "createdAt": { "type": "number" },
+        "lastLoginAt": { "type": "number" },
         "updatedAt": { "type": "number" }
       },
       "required": ["uid", "role"]

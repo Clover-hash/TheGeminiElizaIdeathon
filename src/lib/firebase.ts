@@ -5,7 +5,6 @@ import {
   signInWithPopup, 
   signOut as fbSignOut, 
   onAuthStateChanged as fbOnAuthStateChanged,
-  signInAnonymously,
   User as FirebaseUser,
   Auth
 } from 'firebase/auth';
@@ -25,6 +24,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { AppUser, UserRole } from '../types';
+import { sanitizePayload } from './sanitizer';
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig && firebaseConfig.apiKey && firebaseConfig.projectId
@@ -109,16 +109,54 @@ export async function loginWithGoogle(): Promise<AppUser> {
     const result = await signInWithPopup(auth, provider);
     const u = result.user;
     
-    // Check if user has role in firestore
-    let role: UserRole = 'user';
+    // Check if user has role in firestore, or if owner email matches
+    const isSuperAdminEmail = u.email === 'hokiantoh@gmail.com';
+    let role: UserRole = isSuperAdminEmail ? 'super_admin' : 'user';
+    let createdAt = Date.now();
+    let preferredCompanion: any = undefined;
+    let reflectionIntention: string | undefined = undefined;
+    let reflectionFrequency: any = undefined;
+
     if (db) {
       try {
-        const uDoc = await getDoc(doc(db, 'users', u.uid));
-        if (uDoc.exists() && uDoc.data().role) {
-          role = uDoc.data().role;
+        const uRef = doc(db, 'users', u.uid);
+        const uDoc = await getDoc(uRef);
+        if (uDoc.exists()) {
+          const data = uDoc.data();
+          role = isSuperAdminEmail ? 'super_admin' : (data.role || role);
+          createdAt = data.createdAt || createdAt;
+          preferredCompanion = data.preferredCompanion;
+          reflectionIntention = data.reflectionIntention;
+          reflectionFrequency = data.reflectionFrequency;
+
+          // Update active timestamp and sync latest profile attributes
+          await setDoc(uRef, sanitizePayload({
+            email: u.email,
+            displayName: u.displayName || 'Reflective User',
+            photoURL: u.photoURL,
+            isAnonymous: false,
+            lastLoginAt: Date.now(),
+            updatedAt: Date.now(),
+          }), { merge: true });
+        } else {
+          // Store new account document in Cloud Firestore!
+          await setDoc(uRef, sanitizePayload({
+            uid: u.uid,
+            email: u.email,
+            displayName: u.displayName || 'Reflective User',
+            photoURL: u.photoURL,
+            role,
+            isAnonymous: false,
+            createdAt: createdAt,
+            lastLoginAt: Date.now(),
+            updatedAt: Date.now(),
+            preferredCompanion: 'deredere',
+            reflectionIntention: 'Cultivate mindful awareness and emotional clarity.',
+            reflectionFrequency: 'daily',
+          }));
         }
       } catch (err) {
-        console.warn('Could not read user role from firestore:', err);
+        console.warn('Could not sync user document in Firestore on Google sign-in:', err);
       }
     }
 
@@ -128,6 +166,12 @@ export async function loginWithGoogle(): Promise<AppUser> {
       displayName: u.displayName || 'Reflective User',
       photoURL: u.photoURL,
       role,
+      isAnonymous: false,
+      createdAt,
+      lastLoginAt: Date.now(),
+      preferredCompanion,
+      reflectionIntention,
+      reflectionFrequency,
     };
     return appUser;
   }
@@ -149,33 +193,28 @@ export async function loginWithGoogle(): Promise<AppUser> {
 }
 
 export async function loginDemoUser(customName?: string, requestedRole: UserRole = 'user'): Promise<AppUser> {
-  if (auth && isFirebaseConfigured) {
-    try {
-      const result = await signInAnonymously(auth);
-      return {
-        uid: result.user.uid,
-        email: null,
-        displayName: customName || 'Anonymous Journaler',
-        photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${result.user.uid}`,
-        role: requestedRole,
-        isAnonymous: true,
-      };
-    } catch (e) {
-      console.warn('Anonymous sign-in on Firebase failed, using local demo user', e);
-    }
-  }
+  const roleSeed = requestedRole === 'super_admin' ? 'admin_mei' : requestedRole === 'admin' ? 'admin' : requestedRole === 'moderator' ? 'moderator' : 'journaler';
+  const sanitizedName = (customName || '').trim();
+  const displayName = sanitizedName || (requestedRole === 'super_admin' ? 'Super Admin Evaluator' : requestedRole === 'admin' ? 'Admin Evaluator' : requestedRole === 'moderator' ? 'Safety Moderator' : 'Mindful Journaler');
+  
+  // Create consistent, sanitized UID for local persistence
+  const cleanId = sanitizedName ? sanitizedName.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'guest_' + Math.random().toString(36).substring(2, 8);
+  const uid = `user_${cleanId}`;
 
-  const roleSeed = requestedRole === 'super_admin' ? 'admin_aoi' : requestedRole === 'admin' ? 'admin' : requestedRole === 'moderator' ? 'moderator' : 'journaler';
   const demoUser: AppUser = {
-    uid: 'user_' + (customName ? customName.toLowerCase().replace(/\s+/g, '_') : 'guest_' + Math.random().toString(36).substring(2, 7)),
-    email: customName ? `${customName.toLowerCase().replace(/\s+/g, '.')}@workspace.local` : `${requestedRole}@geminireflect.local`,
-    displayName: customName || (requestedRole === 'super_admin' ? 'Super Admin Evaluator' : requestedRole === 'admin' ? 'Admin Evaluator' : requestedRole === 'moderator' ? 'Safety Moderator' : 'Mindful Journaler'),
-    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${roleSeed}`,
+    uid,
+    email: sanitizedName ? `${sanitizedName.toLowerCase().replace(/[^a-z0-9]/g, '.')}@workspace.local` : `${requestedRole}@geminireflect.local`,
+    displayName,
+    photoURL: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(sanitizedName || roleSeed)}`,
     role: requestedRole,
     isAnonymous: true,
     createdAt: Date.now(),
     lastLoginAt: Date.now(),
+    preferredCompanion: 'deredere',
+    reflectionIntention: 'Cultivate mindful awareness and emotional clarity.',
+    reflectionFrequency: 'daily',
   };
+
   localStorage.setItem(LOCAL_USER_KEY, JSON.stringify(demoUser));
   window.dispatchEvent(new Event('auth_state_changed'));
   return demoUser;
@@ -197,25 +236,78 @@ export function switchActiveRole(newRole: UserRole): AppUser | null {
 
 export async function logout(): Promise<void> {
   if (auth && isFirebaseConfigured) {
-    await fbSignOut(auth);
+    try {
+      await fbSignOut(auth);
+    } catch (err) {
+      console.warn('Firebase sign out note:', err);
+    }
   }
   localStorage.removeItem(LOCAL_USER_KEY);
   window.dispatchEvent(new Event('auth_state_changed'));
 }
 
 export function subscribeToAuth(callback: (user: AppUser | null) => void): () => void {
+  const getLocalUser = (): AppUser | null => {
+    const local = localStorage.getItem(LOCAL_USER_KEY);
+    if (!local) return null;
+    try {
+      return JSON.parse(local) as AppUser;
+    } catch {
+      return null;
+    }
+  };
+
+  const notifyStateChange = () => {
+    // If there is an active Firebase authenticated user, they take precedence
+    if (auth?.currentUser) {
+      return;
+    }
+    const localUser = getLocalUser();
+    callback(localUser);
+  };
+
+  let unsubscribeFirebase = () => {};
+
   if (auth && isFirebaseConfigured) {
-    return fbOnAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
+    unsubscribeFirebase = fbOnAuthStateChanged(auth, async (fbUser: FirebaseUser | null) => {
       if (fbUser) {
-        let role: UserRole = 'user';
+        const isSuperAdminEmail = fbUser.email === 'hokiantoh@gmail.com';
+        let role: UserRole = isSuperAdminEmail ? 'super_admin' : 'user';
+        let createdAt = Date.now();
+        let preferredCompanion: any = undefined;
+        let reflectionIntention: string | undefined = undefined;
+        let reflectionFrequency: any = undefined;
+
         if (db) {
           try {
-            const uDoc = await getDoc(doc(db, 'users', fbUser.uid));
-            if (uDoc.exists() && uDoc.data().role) {
-              role = uDoc.data().role;
+            const uRef = doc(db, 'users', fbUser.uid);
+            const uDoc = await getDoc(uRef);
+            if (uDoc.exists()) {
+              const data = uDoc.data();
+              role = isSuperAdminEmail ? 'super_admin' : (data.role || role);
+              createdAt = data.createdAt || createdAt;
+              preferredCompanion = data.preferredCompanion;
+              reflectionIntention = data.reflectionIntention;
+              reflectionFrequency = data.reflectionFrequency;
+            } else {
+              // Ensure doc exists in Firestore if missing
+              await setDoc(uRef, sanitizePayload({
+                uid: fbUser.uid,
+                email: fbUser.email,
+                displayName: fbUser.displayName || 'Reflective User',
+                photoURL: fbUser.photoURL,
+                role: role,
+                isAnonymous: fbUser.isAnonymous,
+                createdAt: createdAt,
+                lastLoginAt: Date.now(),
+                updatedAt: Date.now(),
+                preferredCompanion: 'deredere',
+                reflectionIntention: 'Cultivate mindful awareness and emotional clarity.',
+                reflectionFrequency: 'daily',
+              }));
             }
           } catch (err) {
-            console.warn('Could not read user role from firestore:', err);
+            console.warn('Could not read or initialize user profile in firestore:', err);
           }
         }
         callback({
@@ -225,39 +317,27 @@ export function subscribeToAuth(callback: (user: AppUser | null) => void): () =>
           photoURL: fbUser.photoURL,
           role,
           isAnonymous: fbUser.isAnonymous,
+          createdAt,
+          lastLoginAt: Date.now(),
+          preferredCompanion,
+          reflectionIntention,
+          reflectionFrequency,
         });
       } else {
-        const local = localStorage.getItem(LOCAL_USER_KEY);
-        if (local) {
-          try {
-            callback(JSON.parse(local));
-          } catch {
-            callback(null);
-          }
-        } else {
-          callback(null);
-        }
+        const localUser = getLocalUser();
+        callback(localUser);
       }
     });
+  } else {
+    notifyStateChange();
   }
 
-  const handler = () => {
-    const local = localStorage.getItem(LOCAL_USER_KEY);
-    if (local) {
-      try {
-        callback(JSON.parse(local));
-      } catch {
-        callback(null);
-      }
-    } else {
-      callback(null);
-    }
-  };
+  // Always listen to local auth_state_changed events so non-Google/guest users immediately trigger UI updates
+  window.addEventListener('auth_state_changed', notifyStateChange);
 
-  handler();
-  window.addEventListener('auth_state_changed', handler);
   return () => {
-    window.removeEventListener('auth_state_changed', handler);
+    unsubscribeFirebase();
+    window.removeEventListener('auth_state_changed', notifyStateChange);
   };
 }
 

@@ -25,7 +25,7 @@ function getLocalUserKey(userId: string) {
   return `${LOCAL_JOURNAL_STORAGE_PREFIX}${userId}`;
 }
 
-function getLocalUserEntries(userId: string): JournalEntry[] {
+export function getLocalUserEntries(userId: string): JournalEntry[] {
   try {
     const raw = localStorage.getItem(getLocalUserKey(userId));
     if (!raw) return [];
@@ -36,7 +36,7 @@ function getLocalUserEntries(userId: string): JournalEntry[] {
   }
 }
 
-function saveLocalUserEntries(userId: string, entries: JournalEntry[]): void {
+export function saveLocalUserEntries(userId: string, entries: JournalEntry[]): void {
   try {
     localStorage.setItem(getLocalUserKey(userId), JSON.stringify(entries));
     window.dispatchEvent(new CustomEvent('local_entries_updated', { detail: { userId } }));
@@ -50,8 +50,8 @@ const INITIAL_DEMO_USERS: AppUser[] = [
   {
     uid: 'user_admin_01',
     email: 'admin@workspace.local',
-    displayName: 'Aoi System Admin',
-    photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin_aoi',
+    displayName: 'Mei System Admin',
+    photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin_mei',
     role: 'super_admin',
     createdAt: Date.now() - 86400000 * 30,
     lastLoginAt: Date.now(),
@@ -91,7 +91,7 @@ const INITIAL_AUDIT_LOGS: SecurityAuditLog[] = [
     id: 'audit_init_02',
     timestamp: Date.now() - 3600000 * 12,
     actorId: 'user_admin_01',
-    actorName: 'Aoi System Admin',
+    actorName: 'Mei System Admin',
     actorRole: 'super_admin',
     action: 'POLICY_ENFORCE',
     targetType: 'DIRECTIVE',
@@ -147,11 +147,18 @@ export function saveLocalAuditLogs(logs: SecurityAuditLog[]): void {
 
 /**
  * Ensures user profile document in Firestore exists with a valid role.
+ * Automatically persists new user accounts to Cloud Firestore and updates login timestamps.
  */
 export async function syncUserProfile(user: AppUser): Promise<AppUser> {
   if (!user || !user.uid) return user;
 
-  let currentRole: UserRole = user.role || 'user';
+  const isSuperAdminEmail = user.email === 'hokiantoh@gmail.com';
+  let currentRole: UserRole = isSuperAdminEmail ? 'super_admin' : (user.role || 'user');
+  let userCreatedAt = user.createdAt || Date.now();
+  let preferredCompanion = user.preferredCompanion;
+  let reflectionIntention = user.reflectionIntention;
+  let reflectionFrequency = user.reflectionFrequency;
+
   const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === user.uid);
 
   if (isFirebaseAuthUser && db) {
@@ -160,17 +167,50 @@ export async function syncUserProfile(user: AppUser): Promise<AppUser> {
       const snapshot = await getDoc(userRef);
       if (snapshot.exists()) {
         const data = snapshot.data();
-        currentRole = data.role || currentRole;
+        currentRole = isSuperAdminEmail ? 'super_admin' : (data.role || currentRole);
+        userCreatedAt = data.createdAt || userCreatedAt;
+        preferredCompanion = data.preferredCompanion || preferredCompanion;
+        reflectionIntention = data.reflectionIntention || reflectionIntention;
+        reflectionFrequency = data.reflectionFrequency || reflectionFrequency;
+
+        // Refresh login timestamp and sync latest profile details safely with undefined stripping
+        await setDoc(userRef, sanitizePayload({
+          email: user.email,
+          displayName: user.displayName || 'Reflective User',
+          photoURL: user.photoURL,
+          isAnonymous: user.isAnonymous ?? false,
+          lastLoginAt: Date.now(),
+          updatedAt: Date.now(),
+        }), { merge: true });
       } else {
-        await setDoc(userRef, {
+        // First-time new user registration in Cloud Firestore!
+        const newAccountPayload = sanitizePayload({
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName,
+          displayName: user.displayName || 'Reflective User',
           photoURL: user.photoURL,
           role: currentRole,
-          createdAt: Date.now(),
+          isAnonymous: user.isAnonymous ?? false,
+          preferredCompanion: preferredCompanion || 'deredere',
+          reflectionIntention: reflectionIntention || 'Cultivate mindful awareness and emotional clarity.',
+          reflectionFrequency: reflectionFrequency || 'daily',
+          createdAt: userCreatedAt,
           lastLoginAt: Date.now(),
-        }, { merge: true });
+          updatedAt: Date.now(),
+        });
+        await setDoc(userRef, newAccountPayload);
+
+        // Record account creation in Security Audit Trail
+        await recordSecurityAuditLog({
+          actorId: user.uid,
+          actorName: user.displayName || 'New User',
+          actorRole: currentRole,
+          action: 'USER_ACCOUNT_CREATED',
+          targetId: user.uid,
+          targetType: 'USER_ACCOUNT',
+          severity: 'INFO',
+          details: `New account registered and stored in Cloud Firestore with role '${currentRole}'.`,
+        });
       }
     } catch (err) {
       console.warn('Firestore user profile sync fallback to local:', err);
@@ -183,17 +223,132 @@ export async function syncUserProfile(user: AppUser): Promise<AppUser> {
   const updatedUser: AppUser = {
     ...user,
     role: currentRole,
+    createdAt: userCreatedAt,
     lastLoginAt: Date.now(),
+    preferredCompanion,
+    reflectionIntention,
+    reflectionFrequency,
   };
 
   if (existingIdx >= 0) {
     users[existingIdx] = { ...users[existingIdx], ...updatedUser };
   } else {
-    users.push(updatedUser);
+    users.unshift(updatedUser);
   }
   saveLocalUsers(users);
 
   return updatedUser;
+}
+
+/**
+ * Updates a user's profile and preferences in Cloud Firestore.
+ */
+export async function updateUserProfile(
+  userId: string,
+  updates: Partial<Pick<AppUser, 'displayName' | 'photoURL' | 'preferredCompanion' | 'reflectionIntention' | 'reflectionFrequency'>>
+): Promise<AppUser> {
+  const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === userId);
+
+  if (isFirebaseAuthUser && db) {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const payload = sanitizePayload({
+        ...updates,
+        updatedAt: Date.now(),
+      });
+      await setDoc(userRef, payload, { merge: true });
+    } catch (err) {
+      console.error('Failed to update user profile in Firestore:', err);
+      throw err;
+    }
+  }
+
+  const users = getLocalUsers();
+  const idx = users.findIndex(u => u.uid === userId);
+  let updated: AppUser;
+  if (idx >= 0) {
+    updated = { ...users[idx], ...updates, updatedAt: Date.now() };
+    users[idx] = updated;
+  } else {
+    updated = { 
+      uid: userId, 
+      email: null, 
+      displayName: updates.displayName || null, 
+      photoURL: updates.photoURL || null, 
+      ...updates, 
+      updatedAt: Date.now() 
+    };
+    users.unshift(updated);
+  }
+  saveLocalUsers(users);
+
+  // Sync active local user if matching
+  try {
+    const activeLocalRaw = localStorage.getItem('gemini_reflect_auth_user');
+    if (activeLocalRaw) {
+      const activeLocal = JSON.parse(activeLocalRaw) as AppUser;
+      if (activeLocal.uid === userId) {
+        const merged = { ...activeLocal, ...updates, updatedAt: Date.now() };
+        localStorage.setItem('gemini_reflect_auth_user', JSON.stringify(merged));
+        window.dispatchEvent(new Event('auth_state_changed'));
+      }
+    }
+  } catch (syncErr) {
+    console.warn('Local session sync note:', syncErr);
+  }
+
+  return updated;
+}
+
+/**
+ * Fetches all registered users from Cloud Firestore if the current user has administrative permissions.
+ */
+export async function fetchRegisteredUsers(): Promise<{ users: AppUser[]; fromFirestore: boolean }> {
+  const isFirebaseAuthUser = Boolean(db && auth?.currentUser);
+
+  if (isFirebaseAuthUser && db) {
+    try {
+      const usersCol = collection(db, 'users');
+      const snapshot = await getDocs(usersCol);
+      if (!snapshot.empty) {
+        const firestoreUsers: AppUser[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          firestoreUsers.push({
+            uid: docSnap.id,
+            email: data.email || null,
+            displayName: data.displayName || 'Reflective User',
+            photoURL: data.photoURL || null,
+            role: data.role || 'user',
+            isAnonymous: Boolean(data.isAnonymous),
+            createdAt: data.createdAt || 0,
+            lastLoginAt: data.lastLoginAt || 0,
+            preferredCompanion: data.preferredCompanion,
+            reflectionIntention: data.reflectionIntention,
+            reflectionFrequency: data.reflectionFrequency,
+          });
+        });
+
+        // Merge with local directory so demo accounts remain available for evaluation
+        const local = getLocalUsers();
+        const mergedMap = new Map<string, AppUser>();
+        firestoreUsers.forEach(u => mergedMap.set(u.uid, u));
+        local.forEach(u => {
+          if (!mergedMap.has(u.uid)) {
+            mergedMap.set(u.uid, u);
+          }
+        });
+
+        const mergedList = Array.from(mergedMap.values());
+        saveLocalUsers(mergedList);
+        return { users: mergedList, fromFirestore: true };
+      }
+    } catch (err) {
+      console.warn('Could not query users collection from Firestore (falling back to local cache):', err);
+    }
+  }
+
+  return { users: getLocalUsers(), fromFirestore: false };
 }
 
 /**
@@ -235,7 +390,7 @@ export async function updateUserRole(
   if (db) {
     try {
       const targetUserRef = doc(db, 'users', targetUserId);
-      await setDoc(targetUserRef, { role: newRole, updatedAt: Date.now() }, { merge: true });
+      await setDoc(targetUserRef, sanitizePayload({ role: newRole, updatedAt: Date.now() }), { merge: true });
     } catch (err) {
       console.warn('Firestore role update fallback to local store:', err);
     }
@@ -295,6 +450,8 @@ export async function recordSecurityAuditLog(
 /**
  * Saves or updates a journal interaction document in Firestore under `users/{userId}/interactions/{entryId}`.
  * Strictly strips undefined fields to guarantee zero-crash database transactions.
+ * Synchronously writes to isolated local cache first so UI components and companion switching
+ * never experience dropped state or lag.
  */
 export async function saveJournalEntry(userId: string, entry: JournalEntry): Promise<void> {
   if (!userId) throw new Error('User ID is required to save journal entry');
@@ -305,23 +462,7 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
     updatedAt: Date.now(),
   });
 
-  const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === userId);
-
-  if (isFirebaseAuthUser && db) {
-    const pathForWrite = `users/${userId}/interactions/${entry.id}`;
-    try {
-      const userInteractionsRef = collection(db, 'users', userId, 'interactions');
-      const docRef = doc(userInteractionsRef, entry.id);
-      await setDoc(docRef, cleanEntry, { merge: true });
-      return;
-    } catch (err) {
-      console.warn('Firestore write failed, synchronizing to isolated local cache:', err);
-      if (err instanceof Error && err.message.toLowerCase().includes('permission')) {
-        handleFirestoreError(err, OperationType.WRITE, pathForWrite);
-      }
-    }
-  }
-
+  // 1. ALWAYS write to local storage cache synchronously and emit event
   const existing = getLocalUserEntries(userId);
   const index = existing.findIndex((e) => e.id === entry.id);
   if (index >= 0) {
@@ -330,6 +471,23 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
     existing.unshift(cleanEntry);
   }
   saveLocalUserEntries(userId, existing);
+
+  // 2. Persist to Cloud Firestore if user is authenticated with Firebase
+  const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === userId);
+
+  if (isFirebaseAuthUser && db) {
+    const pathForWrite = `users/${userId}/interactions/${entry.id}`;
+    try {
+      const userInteractionsRef = collection(db, 'users', userId, 'interactions');
+      const docRef = doc(userInteractionsRef, entry.id);
+      await setDoc(docRef, cleanEntry, { merge: true });
+    } catch (err) {
+      console.warn('Firestore write note, isolated local cache remains fully preserved:', err);
+      if (err instanceof Error && err.message.toLowerCase().includes('permission')) {
+        handleFirestoreError(err, OperationType.WRITE, pathForWrite);
+      }
+    }
+  }
 }
 
 /**
@@ -338,6 +496,11 @@ export async function saveJournalEntry(userId: string, entry: JournalEntry): Pro
 export async function deleteJournalEntry(userId: string, entryId: string): Promise<void> {
   if (!userId || !entryId) throw new Error('User ID and Entry ID required');
 
+  // Remove from local cache synchronously
+  const existing = getLocalUserEntries(userId);
+  const filtered = existing.filter((e) => e.id !== entryId);
+  saveLocalUserEntries(userId, filtered);
+
   const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === userId);
 
   if (isFirebaseAuthUser && db) {
@@ -345,24 +508,18 @@ export async function deleteJournalEntry(userId: string, entryId: string): Promi
     try {
       const docRef = doc(db, 'users', userId, 'interactions', entryId);
       await deleteDoc(docRef);
-      return;
     } catch (err) {
-      console.warn('Firestore delete failed, removing from local cache:', err);
+      console.warn('Firestore delete failed, removed from local cache:', err);
       if (err instanceof Error && err.message.toLowerCase().includes('permission')) {
         handleFirestoreError(err, OperationType.DELETE, pathForDelete);
       }
     }
   }
-
-  const existing = getLocalUserEntries(userId);
-  const filtered = existing.filter((e) => e.id !== entryId);
-  saveLocalUserEntries(userId, filtered);
 }
 
 /**
  * Subscribes to real-time updates for a user's isolated interactions collection.
- * Adheres strictly to Firebase Integration Skill directive:
- * "Data Fetching: Only attach onSnapshot listeners if auth is ready and user is authenticated."
+ * Instantly supplies cached entries and synchronizes bidirectional changes seamlessly.
  */
 export function subscribeToUserEntries(
   userId: string,
@@ -374,7 +531,14 @@ export function subscribeToUserEntries(
     return () => {};
   }
 
+  // 1. Immediately emit current entries from local cache to prevent UI flash or empty state
+  const initialLocal = getLocalUserEntries(userId);
+  if (initialLocal.length > 0) {
+    onUpdate(initialLocal);
+  }
+
   const isFirebaseAuthUser = Boolean(db && auth?.currentUser && auth.currentUser.uid === userId);
+  let unsubscribeFirestore = () => {};
 
   if (isFirebaseAuthUser && db) {
     const pathForQuery = `users/${userId}/interactions`;
@@ -382,7 +546,7 @@ export function subscribeToUserEntries(
       const interactionsRef = collection(db, 'users', userId, 'interactions');
       const q = query(interactionsRef, orderBy('createdAt', 'desc'));
 
-      const unsubscribe = onSnapshot(
+      unsubscribeFirestore = onSnapshot(
         q,
         (snapshot) => {
           const docs = snapshot.docs.map((docSnap) => {
@@ -391,22 +555,40 @@ export function subscribeToUserEntries(
               id: docSnap.id,
               userId: data.userId || userId,
               characterId: data.characterId || 'deredere',
-              characterName: data.characterName || 'Aoi',
+              characterName: data.characterName || 'Mei',
               title: data.title || 'Untitled Reflection',
               content: data.content || '',
               mood: data.mood || 'reflective',
               tags: Array.isArray(data.tags) ? data.tags : [],
               messages: Array.isArray(data.messages) ? data.messages : [],
               summary: data.summary || null,
+              lastReflectedMessageId: data.lastReflectedMessageId,
+              lastReflectedAt: data.lastReflectedAt,
               createdAt: data.createdAt || Date.now(),
               updatedAt: data.updatedAt || Date.now(),
               wordCount: typeof data.wordCount === 'number' ? data.wordCount : 0,
             } as JournalEntry;
           });
-          onUpdate(docs);
+
+          // Merge Firestore documents with local entries to ensure zero lost data
+          const currentLocal = getLocalUserEntries(userId);
+          const map = new Map<string, JournalEntry>();
+          currentLocal.forEach((e) => map.set(e.id, e));
+          docs.forEach((doc) => {
+            const local = map.get(doc.id);
+            if (!local || (doc.updatedAt || 0) >= (local.updatedAt || 0)) {
+              map.set(doc.id, doc);
+            }
+          });
+
+          const merged = Array.from(map.values()).sort(
+            (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+          );
+          saveLocalUserEntries(userId, merged);
+          onUpdate(merged);
         },
         (error) => {
-          console.warn('Firestore real-time subscription error, using local cache:', error);
+          console.warn('Firestore real-time subscription error, keeping local cache:', error);
           if (onError) onError(error);
           onUpdate(getLocalUserEntries(userId));
           if (error && error.message.toLowerCase().includes('permission')) {
@@ -414,10 +596,8 @@ export function subscribeToUserEntries(
           }
         }
       );
-
-      return unsubscribe;
     } catch (err) {
-      console.warn('Error setting up Firestore listener, using local store:', err);
+      console.warn('Error setting up Firestore listener, keeping local store:', err);
       if (err instanceof Error && err.message.toLowerCase().includes('permission')) {
         handleFirestoreError(err, OperationType.LIST, pathForQuery);
       }
@@ -427,7 +607,6 @@ export function subscribeToUserEntries(
   const syncLocal = () => {
     onUpdate(getLocalUserEntries(userId));
   };
-  syncLocal();
 
   const eventListener = (e: Event) => {
     const custom = e as CustomEvent<{ userId: string }>;
@@ -437,7 +616,9 @@ export function subscribeToUserEntries(
   };
 
   window.addEventListener('local_entries_updated', eventListener);
+
   return () => {
+    unsubscribeFirestore();
     window.removeEventListener('local_entries_updated', eventListener);
   };
 }

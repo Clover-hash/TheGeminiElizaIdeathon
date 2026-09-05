@@ -77,6 +77,10 @@ export interface AppUser {
   isAnonymous?: boolean;
   lastLoginAt?: number;
   createdAt?: number;
+  updatedAt?: number;
+  preferredCompanion?: CharacterId;
+  reflectionIntention?: string;
+  reflectionFrequency?: 'daily' | 'thrice_weekly' | 'weekly' | 'casual';
 }
 
 export interface RoleCapability {

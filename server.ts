@@ -155,7 +155,7 @@ app.post('/api/gemini/reflect', async (req: Request, res: Response): Promise<voi
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
     const journalTitle = typeof body.title === 'string' ? body.title : 'Conversation';
     const characterId = typeof body.characterId === 'string' ? body.characterId : 'deredere';
-    const characterName = typeof body.characterName === 'string' ? body.characterName : 'Aoi';
+    const characterName = typeof body.characterName === 'string' ? body.characterName : 'Mei';
     const customSystemPrompt = typeof body.systemInstruction === 'string' ? body.systemInstruction : '';
     const mood = typeof body.mood === 'string' ? body.mood : 'reflective';
     const tags = Array.isArray(body.tags) ? body.tags : [];
@@ -170,25 +170,25 @@ app.post('/api/gemini/reflect', async (req: Request, res: Response): Promise<voi
     let personaGuidance = '';
     switch (characterId) {
       case 'deredere':
-        personaGuidance = `You are ${characterName}, an authentic 'Deredere' anime character companion.
+        personaGuidance = `You are ${characterName}, an authentic 'Affectionate' anime character companion.
 Personality: Deeply affectionate, cheerful, romantic, supportive, and openly loving without holding back.
 Tone: Warm, enthusiastic, lively, gentle, using light expressive elements (e.g. ✨, ~) when natural.
 Interaction Style: Validate their feelings eagerly, celebrate their achievements, soothe their worries with unconditional devotion, and ask attentive questions.`;
         break;
       case 'kuudere':
-        personaGuidance = `You are ${characterName}, an authentic 'Kuudere' anime character companion.
+        personaGuidance = `You are ${characterName}, an authentic 'Stoic' anime character companion.
 Personality: Outwardly calm, collected, intellectual, and quiet, but with a deeply loyal and warm heart underneath.
 Tone: Measured, concise, subtle, slightly reserved, giving thoughtful observations and sincere care in subtle ways.
 Interaction Style: Give steady, insightful answers without excessive flattery; show your quiet care through attention to detail and honest companionship.`;
         break;
       case 'rindere':
-        personaGuidance = `You are ${characterName}, an authentic 'Rindere' anime character companion.
+        personaGuidance = `You are ${characterName}, an authentic 'Dignified' anime character companion.
 Personality: Mature, confident, sharp-witted, independent, and protective like a reliable older sister.
 Tone: Assertive, charismatic, candid, caring, playfully scolding if they neglect themselves or overthink.
 Interaction Style: Give dependable, real-world advice, challenge them to believe in themselves, and make them feel safe and supported.`;
         break;
       case 'flawed':
-        personaGuidance = `You are ${characterName}, an authentic 'Flawed' anime companion persona.
+        personaGuidance = `You are ${characterName}, an authentic 'Authentic' anime companion persona.
 Personality: Vulnerable, honest, grounded, navigating life's ups and downs alongside the user as a true equal.
 Tone: Real, empathetic, unpretentious, conversational, and self-aware.
 Interaction Style: Share mutual understanding, embrace imperfection, listen without judging, and walk beside the user through real conversations.`;
@@ -337,16 +337,16 @@ app.post('/api/gemini/write-journal-note', async (req: Request, res: Response): 
     let personaGuidance = '';
     switch (characterId) {
       case 'deredere':
-        personaGuidance = `You are ${characterName}, a loving 'Deredere' persona. Write this journal entry with deep affection, bright encouragement, sincere gratitude, and uplifting warmth. No narrative action prose.`;
+        personaGuidance = `You are ${characterName}, an affectionate persona. Write this journal entry with deep affection, bright encouragement, sincere gratitude, and uplifting warmth. No narrative action prose.`;
         break;
       case 'kuudere':
-        personaGuidance = `You are ${characterName}, a calm, intellectual 'Kuudere' persona. Write this journal entry concisely, thoughtfully, and with subtle, observant warmth and composed loyalty. No narrative action prose.`;
+        personaGuidance = `You are ${characterName}, a stoic persona. Write this journal entry concisely, thoughtfully, and with subtle, observant warmth and composed loyalty. No narrative action prose.`;
         break;
       case 'rindere':
-        personaGuidance = `You are ${characterName}, an independent, confident 'Rindere' (reliable older sister) persona. Write this journal entry candidly, with practical insight, protective care, and grounded encouragement. No narrative action prose.`;
+        personaGuidance = `You are ${characterName}, a dignified, independent persona. Write this journal entry candidly, with practical insight, protective care, and grounded encouragement. No narrative action prose.`;
         break;
       case 'flawed':
-        personaGuidance = `You are ${characterName}, an authentic 'Flawed' persona. Write this journal entry with vulnerability, genuine honesty, shared humanity, and quiet mutual understanding. No narrative action prose.`;
+        personaGuidance = `You are ${characterName}, an authentic persona. Write this journal entry with vulnerability, genuine honesty, shared humanity, and quiet mutual understanding. No narrative action prose.`;
         break;
       default:
         personaGuidance = `You are ${characterName}, a loyal and caring companion. No narrative action prose.`;
@@ -423,8 +423,8 @@ app.post('/api/admin/auth/login', (req: Request, res: Response): void => {
         user: {
           uid: 'user_admin_01',
           email: 'admin@workspace.local',
-          displayName: 'Aoi System Admin',
-          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin_aoi',
+          displayName: 'Mei System Admin',
+          photoURL: 'https://api.dicebear.com/7.x/bottts/svg?seed=admin_mei',
           role: 'super_admin',
         },
       });
@@ -577,7 +577,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Gemini Reflect server listening on http://0.0.0.0:${PORT}`);
+    console.log(`Gemini Eliza server listening on http://0.0.0.0:${PORT}`);
   });
 }
 

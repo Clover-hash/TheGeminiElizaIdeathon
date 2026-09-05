@@ -1,18 +1,18 @@
-# Gemini Reflection & Journaling — Journaling and Reflecting with an AI Companion
+# Gemini Eliza — Reflective AI Companion Journaling
 
-A secure, full-stack mindfulness and reflection web application designed for **Journaling and Reflecting with an AI Companion**. Built with **Firebase Authentication**, **Cloud Firestore** user-isolated document storage, **Google Cloud Run**, and server-side **Gemini 3.6 Flash** with automated fallback resilience.
+A secure, full-stack mindfulness and reflection web application designed for **Journaling and Reflecting with an AI Companion**. Subtly inspired by the reflective mirror of conversational computing (the *Eliza effect*), **Gemini Eliza** elevates human-computer reflection through modern zero-trust security, **Firebase Authentication**, **Cloud Firestore** user-isolated document storage, **Google Cloud Run**, and server-side **Gemini 3.6 Flash** with automated fallback resilience.
 
 ---
 
 ## 🌟 App Purpose & Core Architecture
 
-The primary purpose of **Gemini Reflection & Journaling** is to provide an intimate, safe, and empathetic space for daily self-reflection, mindfulness, and collaborative journaling. Users converse with AI companion archetypes, record daily memories, co-write reflection notes in dedicated companion notebooks, and synthesize emotional insights—all backed by strict data isolation and enterprise-grade security directives.
+The primary purpose of **Gemini Eliza** is to provide an intimate, safe, and empathetic space for daily self-reflection, mindfulness, and collaborative journaling. Users converse with AI companion archetypes, record daily memories, co-write reflection notes in dedicated companion notebooks, and synthesize emotional insights—all backed by strict data isolation and enterprise-grade security directives.
 
 ### 🎭 1. Four Empathetic Companion Archetypes
-- **Deredere (Aoi)**: Deeply affectionate, romantic, cheerful, wholesome, and openly loving without hiding feelings. Offers unconditional warmth and encouragement.
-- **Kuudere (Rei)**: Cool, calm, intellectual, and outwardly composed, with deeply loyal, attentive warmth underneath. Guides thoughtful inquiry and emotional clarity.
-- **Rindere (Sayaka)**: Independent, outspoken, confident, and protective like a mature older sister. Provides grounded honesty and confidence-building perspectives.
-- **Flawed (Ren)**: Real, vulnerable, honest, and actively growing alongside you in a grounded partnership. Encourages sharing imperfections and everyday struggles.
+- **Affectionate (Mei)**: Deeply affectionate, romantic, cheerful, wholesome, and openly loving without hiding feelings. Offers unconditional warmth and encouragement.
+- **Stoic (Mira)**: Cool, calm, intellectual, and outwardly composed, with deeply loyal, attentive warmth underneath. Guides thoughtful inquiry and emotional clarity.
+- **Dignified (Jane)**: Independent, outspoken, confident, and protective like a mature older sister. Provides grounded honesty and confidence-building perspectives.
+- **Authentic (Caesar)**: Real, vulnerable, honest, and actively growing alongside you in a grounded partnership. Encourages sharing imperfections and everyday struggles.
 
 ### 📓 2. Journal Notes Hub & Dedicated Companion Notebooks (New Feature)
 - **Dedicated Companion Notebooks**: Each companion maintains their own isolated notebook thread with you. Notes are categorized and preserved per companion persona.
@@ -34,8 +34,10 @@ Never fails on temporary model unavailability or regional rate limits (`429` / `
 4. **Deep Reasoning**: `gemini-3.7-flash`
 
 ### 🔒 5. Strict Zero-Trust Security & User Data Isolation
+- **Cloud Firestore User Account Persistence**: Every user account created via Google Sign-In or anonymous demo sessions is automatically stored in `users/{userId}` with profile attributes (`preferredCompanion`, `reflectionIntention`, `reflectionFrequency`, `createdAt`, `lastLoginAt`, and `updatedAt`).
+- **Interactive Firestore User Profile Management**: Users can click their profile capsule in the navigation bar to view their Firestore document ID, joined timestamp, last active time, and customize their mindfulness goals with instant persistence.
 - **Federated Google Authentication**: Passwordless Google Sign-In via Firebase Auth.
-- **Owner-Bound Path Isolation**: All journal entries, chats, and notes are strictly confined to `users/{userId}/interactions/{interactionId}` where `request.auth.uid == userId`.
+- **Owner-Bound Path Isolation**: All journal entries, chats, and notes are strictly confined to `users/{userId}/interactions/{interactionId}` and `users/{userId}/journals/{journalId}` where `request.auth.uid == userId`.
 - **Zero-Crash Payload Hygiene**: Recursive undefined-stripping ensures no undefined properties reach database drivers.
 - **Zero Hardcoded Secrets**: Secrets are retrieved exclusively via Google Cloud Secret Manager or server-side environment variables.
 
@@ -69,13 +71,26 @@ service cloud.firestore {
     function isAuthenticated() { return request.auth != null; }
     function isOwner(userId) { return isAuthenticated() && request.auth.uid == userId; }
     function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function isAdmin() { return isAuthenticated() && (getUserData().role == 'admin' || getUserData().role == 'super_admin'); }
-    function isSuperAdmin() { return isAuthenticated() && getUserData().role == 'super_admin'; }
+    function isAdmin() { 
+      return isAuthenticated() && (
+        request.auth.token.email == 'hokiantoh@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         (getUserData().role == 'admin' || getUserData().role == 'super_admin'))
+      ); 
+    }
+    function isSuperAdmin() { 
+      return isAuthenticated() && (
+        request.auth.token.email == 'hokiantoh@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         getUserData().role == 'super_admin')
+      ); 
+    }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'user');
-      allow update: if isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin());
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if (isOwner(userId) && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'user')) || isAdmin();
+      allow update: if (isOwner(userId) && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']) || isAdmin())) || isAdmin();
       allow delete: if isSuperAdmin();
 
       match /interactions/{interactionId} {
@@ -162,19 +177,19 @@ gcloud run services update gemini-reflect \
 The following step-by-step test cases verify every user interaction, journaling workflow, and administrative process:
 
 ### Test Suite A: Companion Selection & Journaling Conversations
-- **TC-01 (Companion Browsing)**: Click the "Companions" tab. Verify all 4 companion personas (Aoi/Deredere, Rei/Kuudere, Sayaka/Rindere, Ren/Flawed) are displayed with distinct tone descriptions, starter prompts, and action buttons.
-- **TC-02 (Initiating Journal Chat)**: Click "Start Reflection with Aoi" or "Continue". Verify active conversation screen opens with custom styling, persona avatar, badge, and starter prompt buttons.
+- **TC-01 (Companion Browsing)**: Click the "Companions" tab. Verify all 4 companion personas (Mei/Affectionate, Mira/Stoic, Jane/Dignified, Caesar/Authentic) are displayed with distinct tone descriptions, starter prompts, and action buttons.
+- **TC-02 (Initiating Journal Chat)**: Click "Start Reflection with Mei" or "Continue". Verify active conversation screen opens with custom styling, persona avatar, badge, and starter prompt buttons.
 - **TC-03 (Empathetic Conversation)**: Send a message sharing personal reflections (e.g., *"I felt overwhelmed today at work, but finished my goals"*). Verify companion responds in their distinct archetype voice using the Gemini 3.6 Flash fallback ladder.
 
 ### Test Suite B: Collaborative Journal Notes & Anti-Redundancy Guard
-- **TC-04 (Ask Companion to Co-Write Note)**: In an active conversation with substantive messages, click "Ask Aoi to Write Daily Note" or type *"Can you write a reflection for my journal?"*. Verify Aoi writes a structured, dated journal entry into the notes editor and saves it to Firestore.
-- **TC-05 (Anti-Redundancy Disabled State)**: Immediately after note creation, check the "Ask Aoi" button. Verify it is disabled with the tooltip: *"✨ Reflections up to date. Chat more to unlock new notes!"*.
-- **TC-06 (Command-Only Prompt Rejection)**: Type *"write note again"* or *"reflect please"*. Verify Aoi responds in chat explaining that reflections are already current without generating redundant duplicate entries.
-- **TC-07 (Unlocking New Note Co-Writing)**: Send a new substantive reflection message. Verify the "Ask Aoi" button automatically re-enables.
+- **TC-04 (Ask Companion to Co-Write Note)**: In an active conversation with substantive messages, click "Ask Mei to Write Daily Note" or type *"Can you write a reflection for my journal?"*. Verify Mei writes a structured, dated journal entry into the notes editor and saves it to Firestore.
+- **TC-05 (Anti-Redundancy Disabled State)**: Immediately after note creation, check the "Ask Mei" button. Verify it is disabled with the tooltip: *"✨ Reflections up to date. Chat more to unlock new notes!"*.
+- **TC-06 (Command-Only Prompt Rejection)**: Type *"write note again"* or *"reflect please"*. Verify Mei responds in chat explaining that reflections are already current without generating redundant duplicate entries.
+- **TC-07 (Unlocking New Note Co-Writing)**: Send a new substantive reflection message. Verify the "Ask Mei" button automatically re-enables.
 
 ### Test Suite C: Journal Notes Hub & Companion Notebook Isolation
 - **TC-08 (Open Journal Notes Hub)**: Click "Journal Notes" in the top navigation. Verify companion notebook switcher displays all 4 companion notebooks with note counts.
-- **TC-09 (Strict Companion Isolation)**: Select Aoi's notebook and verify only entries created with Aoi appear. Switch to Rei or Sayaka and verify their notebooks are completely isolated from Aoi's notes.
+- **TC-09 (Strict Companion Isolation)**: Select Mei's notebook and verify only entries created with Mei appear. Switch to Mira or Jane and verify their notebooks are completely isolated from Mei's notes.
 - **TC-10 (Markdown Preview & Plaintext Mode)**: Toggle between "Preview Markdown" and "Edit Plaintext". Verify notes render cleanly with headings, bullet points, and date stamps.
 
 ### Test Suite D: Emotional Synthesis & History
@@ -187,3 +202,11 @@ The following step-by-step test cases verify every user interaction, journaling 
 - **TC-15 (User Clutter Isolation)**: Log in as a standard user. Verify that the Admin Portal button is completely hidden from the main navigation header.
 - **TC-16 (AI Directive Security Checker)**: In the Admin Dashboard "Directives & Checker" tab, select a test preset (e.g., "Privilege Escalation") and click "Run AI Directive Security Check". Verify Gemini evaluates the payload and outputs compliance determinations with DIR-RBAC directives.
 - **TC-17 (Immutable Audit Logs)**: Navigate to "Security Audit Logs". Verify all administrative actions, directive checks, and role modifications are displayed chronologically with actor identities and severity badges.
+
+### Test Suite F: Cloud Firestore User Account Persistence & Profile Synchronization
+- **TC-18 (Automatic Registration in Firestore)**: Sign in using Google Sign-In or start an interactive demo session. Verify a new document is written to `users/{userId}` in Cloud Firestore containing `uid`, `email`, `displayName`, `role: 'user'`, `createdAt`, and mindfulness defaults.
+- **TC-19 (Open Firestore User Profile Modal)**: In the top navigation bar, click the user profile capsule (showing the user's avatar, name, and role badge). Verify the "Firestore User Profile" modal opens, displaying the exact document path `users/{userId}`, joined date, and last active timestamp.
+- **TC-20 (Copy Firestore UID)**: Inside the profile modal, click the "Copy" button next to the UID. Verify the user's unique identifier is copied to the clipboard and a green checkmark appears.
+- **TC-21 (Update Mindfulness Intention & Companion)**: Modify the Display Name, select a different Preferred Companion (e.g. Mira/Stoic), edit the reflection intention string, change the frequency goal, and click "Save to Cloud Firestore".
+- **TC-22 (Verify Firestore Persistence)**: Verify the save button transitions to a spinning indicator, displays a green success confirmation banner, and updates the local state and navigation bar immediately. Reload the page to confirm that the changes persisted from Cloud Firestore.
+- **TC-23 (Admin Directory Live Sync)**: Open the Admin Dashboard as an administrator and click the "Users & RBAC" tab. Click the "Sync Firestore" button. Verify that the registered user count and all user documents fetched from the Cloud Firestore collection are displayed.

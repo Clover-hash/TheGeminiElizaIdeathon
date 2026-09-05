@@ -43,7 +43,7 @@ export function hasPermission(userRole: UserRole | undefined, requiredRole: User
 export const ROLE_CAPABILITIES: RoleCapability[] = [
   {
     name: 'Converse & Reflect with Companions',
-    description: 'Engage in multi-turn dialogues with anime personas (Aoi, Rei, Sayaka, Ren).',
+    description: 'Engage in multi-turn dialogues with anime personas (Mei, Mira, Jane, Caesar).',
     minRole: 'user',
     category: 'core',
   },
@@ -151,7 +151,7 @@ export const ADMIN_SECURITY_DIRECTIVES: AdminSecurityDirective[] = [
     title: 'Principle of Least Privilege in Model Fallbacks',
     category: 'LEAST_PRIVILEGE',
     rule: 'LLM agents and automated tools must operate with the minimum permission envelope required for their specific task.',
-    directiveGuideline: 'Companions (Aoi, Rei, Sayaka, Ren) are restricted to `user` level subcollections (`users/{userId}/interactions/*`) and cannot query global metrics or other tenant collections.',
+    directiveGuideline: 'Companions (Mei, Mira, Jane, Caesar) are restricted to `user` level subcollections (`users/{userId}/interactions/*`) and cannot query global metrics or other tenant collections.',
     owaspMapping: 'OWASP LLM06: Excessive Agency',
     enforcementMode: 'STRICT_BLOCK',
   },

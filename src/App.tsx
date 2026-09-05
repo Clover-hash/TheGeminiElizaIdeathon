@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { AppUser, JournalEntry, CharacterPersona } from './types';
 import { CHARACTERS, getCharacterById } from './data/characters';
 import { subscribeToAuth, logout } from './lib/firebase';
-import { subscribeToUserEntries } from './services/firestoreService';
+import { subscribeToUserEntries, getLocalUserEntries } from './services/firestoreService';
 import { Navbar } from './components/Navbar';
 import { LandingPage } from './components/LandingPage';
 import { CharacterSelection } from './components/CharacterSelection';
@@ -17,6 +17,7 @@ import { EntryHistory } from './components/EntryHistory';
 import { ThreatModelModal } from './components/ThreatModelModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { UserProfileModal } from './components/UserProfileModal';
 import { Lock } from 'lucide-react';
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
   const [showThreatModel, setShowThreatModel] = useState<boolean>(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState<boolean>(false);
   const [showAdminLoginModal, setShowAdminLoginModal] = useState<boolean>(false);
+  const [showUserProfileModal, setShowUserProfileModal] = useState<boolean>(false);
 
   // Subscribe to authentication changes
   useEffect(() => {
@@ -69,7 +71,31 @@ export default function App() {
     setActiveTab('characters');
   };
 
-  const handleSelectCharacter = (character: CharacterPersona, mode?: 'continue' | 'new') => {
+  // Robust helper to retrieve the latest conversation for a character
+  const getLatestEntryForCharacter = useCallback((characterId: string, currentEntries: JournalEntry[]) => {
+    const list = currentEntries.filter((e) => e.characterId === characterId);
+    if (currentUser?.uid) {
+      const local = getLocalUserEntries(currentUser.uid).filter((e) => e.characterId === characterId);
+      const map = new Map<string, JournalEntry>();
+      list.forEach((e) => map.set(e.id, e));
+      local.forEach((e) => {
+        const existing = map.get(e.id);
+        if (!existing || (e.updatedAt || 0) >= (existing.updatedAt || 0)) {
+          map.set(e.id, e);
+        }
+      });
+      const combined = Array.from(map.values());
+      if (combined.length > 0) {
+        return combined.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))[0];
+      }
+    }
+    if (list.length > 0) {
+      return list.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0))[0];
+    }
+    return null;
+  }, [currentUser?.uid]);
+
+  const handleSelectCharacter = useCallback((character: CharacterPersona, mode?: 'continue' | 'new') => {
     setSelectedCharacter(character);
 
     if (mode === 'new') {
@@ -77,12 +103,8 @@ export default function App() {
       setChatSessionKey(`chat_${character.id}_${Date.now()}`);
     } else {
       // Find the most recent conversation modified/updated for this character, if any
-      const characterEntries = userEntries.filter((e) => e.characterId === character.id);
-      if (characterEntries.length > 0) {
-        const sorted = [...characterEntries].sort(
-          (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
-        );
-        const latest = sorted[0];
+      const latest = getLatestEntryForCharacter(character.id, userEntries);
+      if (latest && (latest.messages?.length > 0 || latest.content?.trim())) {
         setSelectedEntry(latest);
         setChatSessionKey(`entry_${latest.id}`);
       } else {
@@ -91,7 +113,7 @@ export default function App() {
       }
     }
     setActiveTab('chat');
-  };
+  }, [getLatestEntryForCharacter, userEntries]);
 
   const handleSelectEntry = (entry: JournalEntry) => {
     setSelectedEntry(entry);
@@ -108,13 +130,29 @@ export default function App() {
   };
 
   const handleEntrySaved = useCallback((entry: JournalEntry) => {
-    // Real-time listener handles state synchronization safely without remounting the editor
+    // Immediately synchronize local state so companion switches and views never miss data
+    setUserEntries((prev) => {
+      const idx = prev.findIndex((e) => e.id === entry.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = entry;
+        return copy;
+      }
+      return [entry, ...prev];
+    });
+    setSelectedEntry((current) => {
+      if (current?.id === entry.id) {
+        return entry;
+      }
+      return current;
+    });
   }, []);
 
   const handleEntryDeleted = (entryId: string) => {
     if (selectedEntry?.id === entryId) {
       setSelectedEntry(null);
     }
+    setUserEntries((prev) => prev.filter((e) => e.id !== entryId));
   };
 
   if (authLoading) {
@@ -131,7 +169,12 @@ export default function App() {
   if (!currentUser) {
     return (
       <LandingPage 
-        onLoginSuccess={() => setActiveTab('characters')} 
+        onLoginSuccess={(user) => {
+          if (user) {
+            setCurrentUser(user);
+          }
+          setActiveTab('characters');
+        }} 
         onAdminLoginSuccess={(adminUser) => {
           setCurrentUser(adminUser);
           setShowAdminDashboard(true);
@@ -149,13 +192,18 @@ export default function App() {
         activeTab={activeTab}
         activeCharacter={selectedCharacter}
         onTabChange={(tab) => {
-          if (tab === 'chat' && (activeTab === 'history' || activeTab === 'notes') && !selectedEntry) {
-            setSelectedEntry(null);
+          if (tab === 'chat' && !selectedEntry) {
+            const latest = getLatestEntryForCharacter(selectedCharacter.id, userEntries);
+            if (latest && (latest.messages?.length > 0 || latest.content?.trim())) {
+              setSelectedEntry(latest);
+              setChatSessionKey(`entry_${latest.id}`);
+            }
           }
           setActiveTab(tab);
         }}
         onOpenThreatModel={() => setShowThreatModel(true)}
         onOpenAdminDashboard={() => setShowAdminDashboard(true)}
+        onOpenUserProfile={() => setShowUserProfileModal(true)}
         onSignOut={handleSignOut}
         entryCount={userEntries.length}
       />
@@ -206,7 +254,7 @@ export default function App() {
 
       {/* User Page Footer with subtle admin access trigger */}
       <footer className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 border-t border-slate-200/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-400">
-        <p>Gemini Reflect &bull; Journaling &amp; Reflecting with an AI Companion &bull; Google Cloud Run</p>
+        <p>Gemini Eliza &bull; Journaling &amp; Reflecting with an AI Companion &bull; Google Cloud Run</p>
         
         {!isElevated ? (
           <button
@@ -234,6 +282,23 @@ export default function App() {
         isOpen={showThreatModel}
         onClose={() => setShowThreatModel(false)}
       />
+
+      {currentUser && (
+        <UserProfileModal
+          user={currentUser}
+          isOpen={showUserProfileModal}
+          onClose={() => setShowUserProfileModal(false)}
+          onUserUpdated={(updatedUser) => {
+            setCurrentUser(updatedUser);
+            if (updatedUser.preferredCompanion) {
+              const companion = getCharacterById(updatedUser.preferredCompanion);
+              if (companion) {
+                setSelectedCharacter(companion);
+              }
+            }
+          }}
+        />
+      )}
 
       <AdminLoginModal
         isOpen={showAdminLoginModal}

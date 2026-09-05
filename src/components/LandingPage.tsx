@@ -18,7 +18,7 @@ import { CHARACTERS } from '../data/characters';
 import { AppUser } from '../types';
 
 interface LandingPageProps {
-  onLoginSuccess: () => void;
+  onLoginSuccess: (user?: AppUser) => void;
   onAdminLoginSuccess?: (adminUser: AppUser) => void;
 }
 
@@ -33,8 +33,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
     setLoading(true);
     setError(null);
     try {
-      await loginWithGoogle();
-      onLoginSuccess();
+      const user = await loginWithGoogle();
+      onLoginSuccess(user);
     } catch (err: unknown) {
       console.error('Sign-in error:', err);
       setError((err as Error)?.message || 'Sign in failed. Please try again.');
@@ -47,8 +47,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
     setLoading(true);
     setError(null);
     try {
-      await loginDemoUser(name || customUser || 'Mindful Journaler', 'user');
-      onLoginSuccess();
+      const user = await loginDemoUser(name || customUser || 'Mindful Journaler', 'user');
+      onLoginSuccess(user);
     } catch (err: unknown) {
       setError((err as Error)?.message || 'Quick login failed.');
     } finally {
@@ -73,8 +73,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-xl font-extrabold text-slate-900 tracking-tight">Gemini Reflect</span>
-            <span className="block text-xs text-slate-500 font-medium">Journaling &amp; Reflecting with an AI Companion</span>
+            <span className="text-xl font-extrabold text-slate-900 tracking-tight">Gemini Eliza</span>
+            <span className="block text-xs text-slate-500 font-medium">Reflective Journaling &amp; AI Companions</span>
           </div>
         </div>
 
@@ -107,7 +107,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
         {/* Security / Technology Pill */}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-semibold mb-6 shadow-2xs">
           <Cpu className="w-4 h-4" />
-          <span>Gemini 3.6 Flash &bull; AI Companion Journaling &bull; Isolated Firestore Storage</span>
+          <span>Gemini 3.6 Flash &bull; Reflective AI Companions &bull; Isolated Firestore Storage</span>
         </div>
 
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight max-w-3xl leading-tight">
@@ -115,7 +115,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
         </h1>
 
         <p className="mt-5 text-base sm:text-lg text-slate-600 max-w-2xl leading-relaxed">
-          Journal your daily experiences and reflect deeply alongside an AI companion. Connect with curated personality archetypes—from affectionate warmth to calm contemplation, mature guidance, and grounded vulnerability. Converse, co-write shared reflections, and gain mindful emotional insights in complete privacy.
+          Journal your daily experiences and reflect deeply alongside an AI companion. Gemini Eliza combines genuine emotional presence with multi-turn journaling, co-written notes, and absolute privacy.
         </p>
 
         {/* Character Avatar Showcase Carousel */}
@@ -145,13 +145,57 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
         {/* Authentication Card */}
         <div className="mt-8 w-full max-w-md bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xl shadow-slate-100/80">
           <div className="space-y-4">
+            {/* Primary: Instant Journaling without Google Sign-in */}
+            <div className="text-left space-y-2">
+              <label htmlFor="user-name-input" className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Start Without Google Account
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="user-name-input"
+                  type="text"
+                  placeholder="Your Name (e.g. Maya or Alex)"
+                  value={customUser}
+                  onChange={(e) => setCustomUser(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleDemoSignIn(customUser);
+                  }}
+                  className="flex-1 px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50/50"
+                />
+              </div>
+              <button
+                id="start-normal-journaling-btn"
+                type="button"
+                onClick={() => handleDemoSignIn(customUser)}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-70 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{loading ? 'Starting Reflection Session...' : 'Start Journaling Immediately'}</span>
+              </button>
+              <p className="text-[11px] text-slate-400 text-center leading-tight">
+                No Google account or password needed &bull; Complete privacy &bull; Auto-saves continuously
+              </p>
+            </div>
+
+            <div className="relative py-2 flex items-center justify-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200" />
+              </div>
+              <span className="relative px-3 bg-white text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Or sync with Google
+              </span>
+            </div>
+
+            {/* Secondary: Google Sign In for multi-device sync */}
             <button
               id="google-signin-btn"
+              type="button"
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="w-full flex items-center justify-center gap-3 px-6 py-3.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-base shadow-md hover:shadow-lg transition-all active:scale-[0.99] disabled:opacity-70 cursor-pointer"
+              className="w-full flex items-center justify-center gap-3 px-5 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm shadow-xs hover:shadow-md transition-all active:scale-[0.99] disabled:opacity-70 cursor-pointer"
             >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
                 <path
                   fill="#4285F4"
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -169,36 +213,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                 />
               </svg>
-              <span>{loading ? 'Authenticating...' : 'Sign In with Google'}</span>
+              <span>{loading ? 'Authenticating...' : 'Sign In with Google (Sync Devices)'}</span>
             </button>
-
-            {/* Quick multi-user test login helper */}
-            <div className="pt-4 border-t border-slate-100 text-left">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                Instant Sandbox &amp; Multi-User Evaluation:
-              </p>
-              <div className="flex gap-2">
-                <input
-                  id="demo-user-input"
-                  type="text"
-                  placeholder="e.g. Alice or Bob"
-                  value={customUser}
-                  onChange={(e) => setCustomUser(e.target.value)}
-                  className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
-                <button
-                  id="demo-signin-btn"
-                  onClick={() => handleDemoSignIn()}
-                  disabled={loading}
-                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-                >
-                  Enter Experience
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-2">
-                Simulate different users to verify complete privacy and isolated Firestore interactions.
-              </p>
-            </div>
           </div>
 
           {error && (
@@ -244,7 +260,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLoginSuccess, onAdmi
 
       {/* Footer */}
       <footer className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
-        <p>Gemini Reflect &bull; Journaling and Reflecting with an AI Companion &bull; Google Cloud Run &bull; Firebase Auth &bull; Cloud Firestore</p>
+        <p>Gemini Eliza &bull; Journaling &amp; Reflecting with an AI Companion &bull; Google Cloud Run &bull; Firebase Auth &bull; Cloud Firestore</p>
         <button
           id="footer-admin-login-btn"
           onClick={() => setShowAdminLogin(true)}

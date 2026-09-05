@@ -59,7 +59,7 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
         uid: data.user.uid || 'admin_evaluator_01',
         email: data.user.email || 'admin@workspace.local',
         displayName: data.user.displayName || 'System Administrator',
-        photoURL: data.user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=admin_aoi`,
+        photoURL: data.user.photoURL || `https://api.dicebear.com/7.x/bottts/svg?seed=admin_mei`,
         role: data.user.role || 'super_admin',
         isAnonymous: false,
         createdAt: Date.now() - 86400000 * 60,
